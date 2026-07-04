@@ -35,3 +35,21 @@ redis-data/
 htmlcov/
 .coverage
 *.log
+
+# oh-my-agent runtime (local artifacts — do not commit)
+.antigravitycli/
+.agents/results/
+.agents/state/
+.agents/backup/
+.migration-backup/
+.serena/memories/*
+!.serena/memories/.gitkeep
+
+# oh-my-agent vendor layers (regenerate with `oma link`)
+.claude/
+.codex/
+.qwen/
+.grok/
+.zcode/
+.github/prompts/
+.github/skills/
