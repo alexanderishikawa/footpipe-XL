@@ -145,7 +145,7 @@ Then merge the agent branch to `main` and tag `v0.1.0-mvp`.
 
 1. Provision a small VPS (or home NAS) and run the same Compose stack.
 2. Point real S3/R2 (or keep MinIO) and set `landing/` sync from the scanner.
-3. Follow the ops checklist in `docs/design.md` (separator sheets, Paperless access, backups). After M9, prefer `docs/ops-setup.md`.
+3. Follow **[`docs/ops-setup.md`](ops-setup.md)** — scanner → landing layout, separator sheets, categories, Paperless hardening, backups, and troubleshooting.
 4. Do **not** leave the build agent as the production host unless you intentionally harden it.
 
 ## Checklist (print-friendly)

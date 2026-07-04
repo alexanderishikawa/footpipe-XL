@@ -241,7 +241,7 @@ Principles:
 5. Backup **Postgres + object store + Paperless media together**
 6. Use Paperless to search; `GET /batches/{id}` when failures occur
 
-Full cloud-agent launch and acceptance steps: [`operator-guide.md`](operator-guide.md).
+Production runbook: [`ops-setup.md`](ops-setup.md). Cloud-agent launch: [`operator-guide.md`](operator-guide.md).
 
 ---
 
