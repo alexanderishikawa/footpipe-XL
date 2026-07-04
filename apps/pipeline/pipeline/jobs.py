@@ -242,11 +242,17 @@ def commit_archive(session, msg: JobMessage) -> list[JobMessage]:
         return _maybe_finalize(session, batch)
 
     original_bytes = store.get(_original_key(session, store, batch))
+    # Provenance keyed on batch id + page range (stable across re-splits) so a
+    # forced re-run produces byte-identical PDFs that Paperless dedupes, keeping
+    # commit.archive idempotent instead of creating duplicate archive entries.
     final_pdf = extract_pages(
         original_bytes,
         doc.page_start,
         doc.page_end,
-        metadata={"/Producer": "footpipe-XL", "/Keywords": f"batch:{batch.id} doc:{doc.id}"},
+        metadata={
+            "/Producer": "footpipe-XL",
+            "/Keywords": f"batch:{batch.id} pages:{doc.page_start}-{doc.page_end}",
+        },
     )
     final_key = f"final/{batch.id}/{doc.id}.pdf"
     store.put(final_key, final_pdf, content_type="application/pdf")

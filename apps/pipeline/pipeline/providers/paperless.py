@@ -7,6 +7,7 @@ consumed so we can persist its real `paperless_id`.
 
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -105,7 +106,17 @@ class PaperlessArchive:
                         if found is not None:
                             return found
                     elif status == "FAILURE":
-                        raise PaperlessError(f"consumption failed: {task.get('result')}")
+                        result = str(task.get("result") or "")
+                        # Paperless rejects identical PDFs as duplicates; treat
+                        # that as idempotent success and return the existing id.
+                        if "duplicate" in result.lower():
+                            m = re.search(r"#(\d+)", result)
+                            if m:
+                                return int(m.group(1))
+                            found = self._find_by_title(title)
+                            if found is not None:
+                                return found
+                        raise PaperlessError(f"consumption failed: {result}")
             time.sleep(2.0)
         # Fall back to a title lookup in case the task record rotated out.
         found = self._find_by_title(title)

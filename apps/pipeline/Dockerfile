@@ -10,6 +10,7 @@ WORKDIR /app
 COPY pyproject.toml /app/pyproject.toml
 COPY pipeline /app/pipeline
 COPY migrations /app/migrations
+COPY tests /app/tests
 COPY alembic.ini /app/alembic.ini
 
 RUN pip install --upgrade pip && pip install ".[dev]"

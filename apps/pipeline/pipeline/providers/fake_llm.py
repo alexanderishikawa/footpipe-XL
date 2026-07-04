@@ -13,23 +13,28 @@ from .base import Enrichment
 
 _MARKER = re.compile(r"@@DOC\s+category=([a-z_]+)@@", re.IGNORECASE)
 
-# keyword -> category, scanned when no explicit marker is present.
+# keyword -> category, scanned in order (first match wins), so more specific
+# indicators are listed before generic ones (e.g. tax before the generic
+# bank "statement").
 _KEYWORDS: dict[str, str] = {
-    "invoice": "invoice",
-    "amount due": "invoice",
-    "bill to": "invoice",
-    "agreement": "contract",
-    "contract": "contract",
-    "terms and conditions": "contract",
-    "statement": "bank",
-    "account balance": "bank",
-    "irs": "tax",
-    "form 1099": "tax",
-    "tax": "tax",
-    "dear": "correspondence",
-    "sincerely": "correspondence",
     "pay to the order": "check",
     "check no": "check",
+    "irs": "tax",
+    "form 1099": "tax",
+    "1099": "tax",
+    "tax year": "tax",
+    "amount due": "invoice",
+    "bill to": "invoice",
+    "invoice": "invoice",
+    "master service agreement": "contract",
+    "terms and conditions": "contract",
+    "agreement": "contract",
+    "contract": "contract",
+    "account balance": "bank",
+    "bank statement": "bank",
+    "statement": "bank",
+    "dear": "correspondence",
+    "sincerely": "correspondence",
 }
 
 
@@ -49,7 +54,7 @@ class FakeLlmProvider:
         else:
             lowered = text.lower()
             for kw, cat in _KEYWORDS.items():
-                if kw in lowered and cat in categories:
+                if cat in categories and re.search(rf"\b{re.escape(kw)}\b", lowered):
                     category = cat
                     confidence = 0.8
                     break
