@@ -1,0 +1,37 @@
+# Secrets and local env
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Runtime / volumes
+data/
+tmp/
+*.db
+.minio/
+paperless-data/
+postgres-data/
+redis-data/
+
+# Coverage / logs
+htmlcov/
+.coverage
+*.log
