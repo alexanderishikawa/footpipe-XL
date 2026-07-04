@@ -30,6 +30,8 @@ def test_registry_rejects_unknown_llm():
 def test_azure_ocr_provider_calls_sdk(mock_settings, mock_client_cls):
     mock_settings.return_value.azure_document_intelligence_endpoint = "https://x.cognitiveservices.azure.com"
     mock_settings.return_value.azure_document_intelligence_key = "key"
+    mock_settings.return_value.azure_ocr_chunk_pages = 25
+    mock_settings.return_value.azure_ocr_chunk_max_bytes = 3_500_000
     poller = MagicMock()
     poller.result.return_value = type(
         "R",

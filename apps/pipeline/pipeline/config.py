@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     llm_provider: str = "fake"
     azure_document_intelligence_endpoint: str = ""
     azure_document_intelligence_key: str = ""
+    # Azure F0: 4 MB + 2 pages/request. S0: 500 MB + 2000 pages — raise chunk on paid tier.
+    azure_ocr_chunk_pages: int = 2
+    azure_ocr_chunk_max_bytes: int = 3_500_000
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 

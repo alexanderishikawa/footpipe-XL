@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import Any
+from typing import Any, Iterator
 
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
 from pypdf import PdfReader
 
 from ..config import get_settings
+from ..pdfutil import extract_pages
 from .base import OcrResult, PageOcrResult
 
 log = logging.getLogger(__name__)
 
 _MODEL_ID = "prebuilt-read"
+
+# Azure F0 (free) tier: 4 MB / request, 2 pages / request. S0: 500 MB, 2000 pages.
+_DEFAULT_CHUNK_PAGES = 2
+_DEFAULT_CHUNK_MAX_BYTES = 3_500_000
 
 
 def _page_text_and_confidence(page: Any) -> tuple[str, float]:
@@ -32,24 +37,51 @@ def _page_text_and_confidence(page: Any) -> tuple[str, float]:
     return text, confidence
 
 
-def parse_analyze_result(result: Any, *, expected_pages: int) -> OcrResult:
+def parse_analyze_result(
+    result: Any, *, expected_pages: int, page_offset: int = 0
+) -> OcrResult:
     """Map Azure AnalyzeResult to pipeline OcrResult (0-based page_index)."""
     by_index: dict[int, PageOcrResult] = {}
     for page in getattr(result, "pages", None) or []:
         page_number = getattr(page, "page_number", None)
         if page_number is None:
             continue
-        idx = int(page_number) - 1
+        idx = page_offset + int(page_number) - 1
         text, confidence = _page_text_and_confidence(page)
         by_index[idx] = PageOcrResult(page_index=idx, text=text, confidence=confidence)
 
     pages: list[PageOcrResult] = []
-    for idx in range(expected_pages):
+    for rel in range(expected_pages):
+        idx = page_offset + rel
         if idx in by_index:
             pages.append(by_index[idx])
         else:
             pages.append(PageOcrResult(page_index=idx, text="", confidence=0.5))
     return OcrResult(pages=pages)
+
+
+def iter_page_chunks(
+    total_pages: int,
+    *,
+    max_pages: int,
+    pdf_bytes: bytes,
+    max_bytes: int,
+) -> Iterator[tuple[int, int, bytes]]:
+    """Yield (start, end inclusive, chunk_pdf_bytes) respecting page and byte limits."""
+    start = 0
+    while start < total_pages:
+        end = min(start + max_pages - 1, total_pages - 1)
+        chunk = extract_pages(pdf_bytes, start, end)
+        while len(chunk) > max_bytes and end > start:
+            end -= 1
+            chunk = extract_pages(pdf_bytes, start, end)
+        if len(chunk) > max_bytes:
+            raise ValueError(
+                f"PDF page {start} alone is {len(chunk)} bytes; exceeds Azure limit "
+                f"({max_bytes} bytes per request). Re-scan at lower DPI or upgrade to S0."
+            )
+        yield start, end, chunk
+        start = end + 1
 
 
 class AzureDocumentIntelligenceOcr:
@@ -65,14 +97,45 @@ class AzureDocumentIntelligenceOcr:
             endpoint=settings.azure_document_intelligence_endpoint.rstrip("/"),
             credential=AzureKeyCredential(settings.azure_document_intelligence_key),
         )
+        self._chunk_pages = settings.azure_ocr_chunk_pages
+        self._chunk_max_bytes = settings.azure_ocr_chunk_max_bytes
 
-    def ocr_document(self, pdf_bytes: bytes) -> OcrResult:
-        expected_pages = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
-        log.info("azure OCR: analyzing %d-page PDF with %s", expected_pages, _MODEL_ID)
+    def _analyze_chunk(self, chunk_bytes: bytes) -> Any:
         poller = self._client.begin_analyze_document(
             _MODEL_ID,
-            body=io.BytesIO(pdf_bytes),
+            body=io.BytesIO(chunk_bytes),
             content_type="application/pdf",
         )
-        result = poller.result()
-        return parse_analyze_result(result, expected_pages=expected_pages)
+        return poller.result()
+
+    def ocr_document(self, pdf_bytes: bytes) -> OcrResult:
+        total_pages = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+        log.info(
+            "azure OCR: %d-page PDF, chunk=%d pages max %d bytes",
+            total_pages,
+            self._chunk_pages,
+            self._chunk_max_bytes,
+        )
+
+        merged: list[PageOcrResult] = []
+        for start, end, chunk_bytes in iter_page_chunks(
+            total_pages,
+            max_pages=self._chunk_pages,
+            pdf_bytes=pdf_bytes,
+            max_bytes=self._chunk_max_bytes,
+        ):
+            chunk_page_count = end - start + 1
+            log.info(
+                "azure OCR: analyzing pages %d-%d (%d pages, %d bytes)",
+                start,
+                end,
+                chunk_page_count,
+                len(chunk_bytes),
+            )
+            result = self._analyze_chunk(chunk_bytes)
+            part = parse_analyze_result(
+                result, expected_pages=chunk_page_count, page_offset=start
+            )
+            merged.extend(part.pages)
+
+        return OcrResult(pages=merged)
