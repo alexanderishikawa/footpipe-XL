@@ -1,0 +1,9 @@
+{
+  "documents": 3,
+  "categories_any_of": [
+    "invoice",
+    "contract",
+    "correspondence"
+  ],
+  "max_needs_review_ratio": 1.0
+}

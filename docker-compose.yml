@@ -1,0 +1,143 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: pipeline
+      POSTGRES_DB: pipeline
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.13
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PAPERLESS_REDIS: redis://redis:6379/1
+      PAPERLESS_SECRET_KEY: footpipe-dev-secret-change-me
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_ALLOWED_HOSTS: "*"
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: http://paperless:8000,http://localhost:8000
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_OCR_MODE: skip
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: admin
+    ports:
+      - "8000:8000"
+    volumes:
+      - paperless-data:/usr/src/paperless/data
+      - paperless-media:/usr/src/paperless/media
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/api/ -o /dev/null || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+
+  api:
+    build: ./apps/pipeline
+    command: ["/app/entrypoint-api.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      paperless:
+        condition: service_healthy
+    environment:
+      OCR_PROVIDER: ${OCR_PROVIDER:-fake}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      DATABASE_URL: postgresql+psycopg://pipeline:pipeline@postgres:5432/pipeline
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORE_ENDPOINT: http://minio:9000
+      OBJECT_STORE_BUCKET: footpipe
+      OBJECT_STORE_ACCESS_KEY: minioadmin
+      OBJECT_STORE_SECRET_KEY: minioadmin
+      OBJECT_STORE_REGION: us-east-1
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: admin
+      CATEGORIES_PATH: /app/config/categories.yaml
+      API_PORT: "8080"
+      LANDING_HOOK_SECRET: ${LANDING_HOOK_SECRET:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro
+      - ./fixtures:/app/fixtures:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()\""]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  worker:
+    build: ./apps/pipeline
+    command: ["/app/entrypoint-worker.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      paperless:
+        condition: service_healthy
+    environment:
+      OCR_PROVIDER: ${OCR_PROVIDER:-fake}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      DATABASE_URL: postgresql+psycopg://pipeline:pipeline@postgres:5432/pipeline
+      REDIS_URL: redis://redis:6379/0
+      OBJECT_STORE_ENDPOINT: http://minio:9000
+      OBJECT_STORE_BUCKET: footpipe
+      OBJECT_STORE_ACCESS_KEY: minioadmin
+      OBJECT_STORE_SECRET_KEY: minioadmin
+      OBJECT_STORE_REGION: us-east-1
+      PAPERLESS_URL: http://paperless:8000
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: admin
+      CATEGORIES_PATH: /app/config/categories.yaml
+    volumes:
+      - ./config:/app/config:ro
+      - ./fixtures:/app/fixtures:ro
+
+volumes:
+  postgres-data:
+  minio-data:
+  paperless-data:
+  paperless-media:
