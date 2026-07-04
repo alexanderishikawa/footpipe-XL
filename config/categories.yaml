@@ -1,0 +1,10 @@
+# Document category taxonomy (docs/design.md § Category taxonomy).
+# Enrichment maps each document to exactly one of these values; unknown -> other.
+categories:
+  - invoice
+  - contract
+  - bank
+  - tax
+  - correspondence
+  - check
+  - other

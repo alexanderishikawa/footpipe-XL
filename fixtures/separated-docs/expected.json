@@ -1,0 +1,8 @@
+{
+  "documents": 2,
+  "categories_any_of": [
+    "bank",
+    "tax"
+  ],
+  "max_needs_review_ratio": 1.0
+}
