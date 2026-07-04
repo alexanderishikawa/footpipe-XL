@@ -141,6 +141,7 @@ Pick one path that matches your scanner:
 
 | Method | Summary |
 |--------|---------|
+| **Epson ES-580W (recommended)** | Scan to SMB share on footpipe host + [`landing-watch.py`](../scripts/landing-watch.py). Full steps: [`scanner-epson-es580w.md`](scanner-epson-es580w.md). |
 | **Scanner vendor cloud → S3/R2** | Configure the scanner or its app to upload PDFs into `landing/.../original.pdf` on your bucket. |
 | **NAS watch folder → `rclone sync`** | Scanner saves to a local folder; cron/`systemd` syncs to `s3:footpipe/landing/...`. |
 | **SFTP → sync** | Same as above with `lftp`/`rsync` over SFTP to a bucket mount. |

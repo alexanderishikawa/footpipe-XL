@@ -79,6 +79,7 @@ See [`.env.example`](.env.example). Key production settings:
 | Doc | Audience |
 |-----|----------|
 | [Ops setup](docs/ops-setup.md) | Human: production scanner, landing, backup |
+| [Epson ES-580W setup](docs/scanner-epson-es580w.md) | Scan to network folder → landing watcher |
 | [Operator guide](docs/operator-guide.md) | Human: launch cloud agent, accept MVP |
 | [Plan](docs/plan.md) | Cloud agent: build order |
 | [Design](docs/design.md) | Architecture |

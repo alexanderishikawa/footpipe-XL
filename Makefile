@@ -42,5 +42,9 @@ endif
 fixtures:
 	$(COMPOSE) run --rm --no-deps api python /app/fixtures/gen_fixtures.py /app/fixtures
 
+## Watch a scanner inbox folder and upload PDFs to landing/ (see docs/scanner-epson-es580w.md).
+landing-watch:
+	python3 scripts/landing-watch.py $${SCAN_INBOX:-/srv/scan-inbox}
+
 clean: down
 	$(DOCKER) system prune -f
