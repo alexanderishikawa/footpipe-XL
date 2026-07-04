@@ -52,6 +52,7 @@ For production deployment (scanner → landing, separators, backups), follow [`d
 
 | Service | URL |
 |---------|-----|
+| **Upload a PDF (use this)** | http://localhost:8080/upload |
 | Pipeline API | http://localhost:8080 |
 | Health | http://localhost:8080/health |
 | Paperless | http://localhost:8000 |
@@ -62,7 +63,7 @@ Default Paperless login: `admin` / `admin` — change before production.
 ### Typical workflow
 
 1. `make up`
-2. Drop a PDF at `landing/{date}/{batch_id}/original.pdf` in the object store (or scan via your configured upload path — see ops setup).
+2. Open **http://localhost:8080/upload** and drop your PDF (or use MinIO — optional).
 3. Watch the worker process the batch: `make logs`
 4. Search results in Paperless; inspect failures via `GET /batches/{id}`.
 

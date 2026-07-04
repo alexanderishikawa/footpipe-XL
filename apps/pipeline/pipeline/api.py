@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import FastAPI, Header, HTTPException, Response
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, File, Form, Header, HTTPException, Response, UploadFile
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select, text
 
 from .config import get_settings
@@ -23,6 +26,35 @@ from .schemas import (
 )
 
 app = FastAPI(title="footpipe-XL pipeline control API", version="0.1.0")
+
+_UPLOAD_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>footpipe — upload batch</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin: 1rem 0 0.25rem; font-weight: 600; }
+    input[type=file], input[type=text] { width: 100%; box-sizing: border-box; }
+    button { margin-top: 1.25rem; padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    .hint { color: #555; font-size: 0.9rem; margin-top: 0.25rem; }
+    a { color: #06c; }
+  </style>
+</head>
+<body>
+  <h1>Upload a scan batch</h1>
+  <p>Drop a multi-page PDF here. The worker picks it up from <code>landing/</code> automatically.</p>
+  <form method="post" action="/upload" enctype="multipart/form-data">
+    <label for="file">PDF file</label>
+    <input id="file" name="file" type="file" accept="application/pdf,.pdf" required>
+    <label for="batch_id">Batch name (optional)</label>
+    <input id="batch_id" name="batch_id" type="text" placeholder="morning-mail">
+    <p class="hint">Letters, numbers, dashes only. Leave blank for an auto name.</p>
+    <button type="submit">Upload &amp; process</button>
+  </form>
+  <p class="hint"><a href="/health">Health</a> · <a href="http://localhost:8000" target="_blank">Paperless</a></p>
+</body>
+</html>"""
 
 _RETRYABLE = {"failed", "dead"}
 _TERMINAL = {"completed", "failed", "failed_partial", "skipped_duplicate"}
@@ -60,6 +92,52 @@ def health(response: Response) -> HealthResponse:
     if not ok:
         response.status_code = 503
     return HealthResponse(status="ok" if ok else "degraded", checks=checks)
+
+
+@app.get("/upload", response_class=HTMLResponse)
+def upload_form() -> str:
+    """Simple browser UI to land a PDF without MinIO console or CLI."""
+    return _UPLOAD_HTML
+
+
+@app.post("/upload", response_class=HTMLResponse)
+async def upload_batch(
+    file: UploadFile = File(...),
+    batch_id: str = Form(default=""),
+) -> str:
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF file required")
+    raw = await file.read()
+    if not raw.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="not a valid PDF")
+
+    name = batch_id.strip().lower()
+    if name:
+        safe = "".join(c for c in name if c.isalnum() or c in "-_")
+        if not safe:
+            raise HTTPException(status_code=400, detail="invalid batch name")
+    else:
+        stem = (file.filename or "scan").rsplit(".", 1)[0]
+        safe = "".join(c for c in stem.lower() if c.isalnum() or c in "-_")[:40] or "scan"
+        safe = f"{safe}-{uuid.uuid4().hex[:6]}"
+
+    now = datetime.now(timezone.utc)
+    key = f"landing/{now:%Y/%m/%d}/{safe}/original.pdf"
+    store = S3ObjectStore()
+    store.put(key, raw, content_type="application/pdf")
+
+    enqueue(JobMessage(type="ingest.register", entity_id=key))
+
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Uploaded</title>
+<style>body {{ font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; }}</style>
+</head><body>
+  <h1>Uploaded</h1>
+  <p>Your PDF is in <code>{key}</code>.</p>
+  <p>The worker should pick it up within a few seconds.</p>
+  <p><a href="/upload">Upload another</a> · <a href="http://localhost:8000" target="_blank">Paperless</a></p>
+  <p class="hint">Watch logs: <code>make logs</code></p>
+</body></html>"""
 
 
 @app.get("/batches/{batch_id}", response_model=BatchOut)
