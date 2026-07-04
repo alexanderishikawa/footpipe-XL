@@ -14,9 +14,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
-    # Providers (fake until M8)
+    # Providers (fake default; azure/openai for live — M8)
     ocr_provider: str = "fake"
     llm_provider: str = "fake"
+    azure_document_intelligence_endpoint: str = ""
+    azure_document_intelligence_key: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
 
     # Data stores
     database_url: str = "postgresql+psycopg://pipeline:pipeline@postgres:5432/pipeline"

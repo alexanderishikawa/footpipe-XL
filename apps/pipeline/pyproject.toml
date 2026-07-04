@@ -17,6 +17,9 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "reportlab>=4.2",
+    "azure-ai-documentintelligence>=1.0.0",
+    "azure-core>=1.30",
+    "openai>=1.40",
 ]
 
 [project.optional-dependencies]

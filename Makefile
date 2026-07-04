@@ -29,9 +29,14 @@ test:
 	$(COMPOSE) run --rm --no-deps -e DATABASE_URL=sqlite:// api pytest -q
 
 ## End-to-end golden smoke over fixtures (requires the stack up).
+## Default uses fake providers. Set LIVE=1 to run with azure + openai (secrets in .env).
 smoke:
 	$(COMPOSE) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
+ifeq ($(LIVE),1)
+	$(COMPOSE) exec -T -e OCR_PROVIDER=azure -e LLM_PROVIDER=openai api python -m pipeline.smoke
+else
 	$(COMPOSE) exec -T api python -m pipeline.smoke
+endif
 
 ## Regenerate fixture PDFs + expected.json (dev only).
 fixtures:

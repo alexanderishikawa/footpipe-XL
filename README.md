@@ -14,13 +14,19 @@ Automated mailroom document pipeline for a small business: batch-scanned mail, i
 
 ## Status
 
-Seed only. Implementation is milestone-driven (`docs/plan.md`). MVP success:
+MVP (M1–M7) is implemented. Default providers are `fake` (no cloud keys).
 
 ```bash
 make up && make test && make smoke
 ```
 
-Until the agent builds the harness, those targets do not exist yet.
+**Live providers (M8):** set Azure + OpenAI secrets in `.env`, then:
+
+```bash
+LIVE=1 make smoke
+```
+
+CI and local dev stay on fakes unless `LIVE=1` is set.
 
 ## Quick links
 

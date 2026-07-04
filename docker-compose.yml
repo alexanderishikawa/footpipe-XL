@@ -81,6 +81,10 @@ services:
     environment:
       OCR_PROVIDER: ${OCR_PROVIDER:-fake}
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:-}
+      AZURE_DOCUMENT_INTELLIGENCE_KEY: ${AZURE_DOCUMENT_INTELLIGENCE_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DATABASE_URL: postgresql+psycopg://pipeline:pipeline@postgres:5432/pipeline
       REDIS_URL: redis://redis:6379/0
       OBJECT_STORE_ENDPOINT: http://minio:9000
@@ -121,6 +125,10 @@ services:
     environment:
       OCR_PROVIDER: ${OCR_PROVIDER:-fake}
       LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+      AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: ${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:-}
+      AZURE_DOCUMENT_INTELLIGENCE_KEY: ${AZURE_DOCUMENT_INTELLIGENCE_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DATABASE_URL: postgresql+psycopg://pipeline:pipeline@postgres:5432/pipeline
       REDIS_URL: redis://redis:6379/0
       OBJECT_STORE_ENDPOINT: http://minio:9000

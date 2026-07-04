@@ -20,6 +20,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select
 
+from .config import get_settings
 from .db import session_scope
 from .models import Batch, Document
 from .objectstore import S3ObjectStore
@@ -86,6 +87,8 @@ def run() -> int:
         return 1
 
     print(f"== footpipe smoke (run {run_id}); {len(fixtures)} fixtures ==")
+    settings = get_settings()
+    print(f"   OCR_PROVIDER={settings.ocr_provider} LLM_PROVIDER={settings.llm_provider}")
 
     uploaded: list[tuple[str, str, dict]] = []
     for name, pdf, expected in fixtures:
