@@ -6,8 +6,10 @@ service runnable with the Compose stack and `fake` providers (M1-M7).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 
+import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,6 +59,13 @@ class Settings(BaseSettings):
     # Categories taxonomy config
     categories_path: str = "/app/config/categories.yaml"
 
+    # v1.1 metadata sync thresholds (used by enrich.run / sync_metadata)
+    metadata_date_min_conf: float = 0.7
+    metadata_originator_min_conf: float = 0.6
+    paperless_bootstrap_types: bool = True
+    paperless_content_date_field_name: str = "Content Date"
+    max_enrichment_tags: int = 20
+
     # Poller
     poll_interval_seconds: float = 2.0
     landing_prefix: str = "landing/"
@@ -65,3 +74,65 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+@dataclass(frozen=True)
+class CategoryEntry:
+    slug: str
+    paperless_type: str
+
+
+_DEFAULT_CATEGORY_ENTRIES: tuple[CategoryEntry, ...] = (
+    CategoryEntry("invoice", "Invoice"),
+    CategoryEntry("contract", "Contract"),
+    CategoryEntry("bank", "Bank Statement"),
+    CategoryEntry("tax", "Tax Document"),
+    CategoryEntry("correspondence", "Correspondence"),
+    CategoryEntry("check", "Check"),
+    CategoryEntry("other", "Other"),
+)
+
+
+def _parse_category_entries(raw: object) -> list[CategoryEntry]:
+    if not raw:
+        return list(_DEFAULT_CATEGORY_ENTRIES)
+    if isinstance(raw, list) and raw and isinstance(raw[0], str):
+        return [CategoryEntry(slug=s, paperless_type=s.replace("_", " ").title()) for s in raw]
+    entries: list[CategoryEntry] = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        slug = str(item.get("slug") or "").strip().lower()
+        if not slug:
+            continue
+        paperless_type = str(item.get("paperless_type") or slug.replace("_", " ").title())
+        entries.append(CategoryEntry(slug=slug, paperless_type=paperless_type))
+    if not entries:
+        return list(_DEFAULT_CATEGORY_ENTRIES)
+    if not any(e.slug == "other" for e in entries):
+        entries.append(CategoryEntry("other", "Other"))
+    return entries
+
+
+@lru_cache
+def load_category_entries() -> tuple[CategoryEntry, ...]:
+    """Load slug + paperless_type rows from categories.yaml."""
+    path = get_settings().categories_path
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return _DEFAULT_CATEGORY_ENTRIES
+    return tuple(_parse_category_entries(data.get("categories")))
+
+
+def load_category_slugs() -> list[str]:
+    return [e.slug for e in load_category_entries()]
+
+
+def paperless_type_for_slug(slug: str) -> str | None:
+    needle = slug.strip().lower()
+    for entry in load_category_entries():
+        if entry.slug == needle:
+            return entry.paperless_type
+    return None

@@ -102,6 +102,26 @@ SPLIT_MIN_CONFIDENCE=0.6
 
 Batches over these limits are rejected at ingest. Tune for your scan volume.
 
+### Paperless metadata sync (v1.1)
+
+After each document is archived, the worker pushes enrichment (tags, document type, correspondent, content date) to Paperless. Tune confidence gates in `.env`:
+
+```bash
+# Min confidence to sync content date → Paperless "Content Date" custom field
+METADATA_DATE_MIN_CONF=0.7
+
+# Min confidence to sync originator → Paperless correspondent
+METADATA_ORIGINATOR_MIN_CONF=0.6
+
+# Auto-create document types from config/categories.yaml on first sync (default: true)
+PAPERLESS_BOOTSTRAP_TYPES=true
+
+# Name of the date custom field created in Paperless (default: Content Date)
+PAPERLESS_CONTENT_DATE_FIELD_NAME=Content Date
+```
+
+Restart the stack after changing these values: `make down && make up`.
+
 ### Optional webhook
 
 The **poller is primary**. If your scanner can POST when a batch lands:
@@ -177,22 +197,31 @@ Without separators, the pipeline **prefers under-splitting** (one long document)
 
 ---
 
-## 5. Categories
+## 5. Categories and Paperless document types
 
-Edit `config/categories.yaml` before go-live:
+Edit `config/categories.yaml` before go-live. Each entry maps a pipeline **slug** (what the LLM picks) to a **Paperless document type** display name:
 
 ```yaml
 categories:
-  - invoice
-  - contract
-  - bank
-  - tax
-  - correspondence
-  - check
-  - other
+  - slug: invoice
+    paperless_type: Invoice
+  - slug: contract
+    paperless_type: Contract
+  - slug: bank
+    paperless_type: Bank Statement
+  - slug: tax
+    paperless_type: Tax Document
+  - slug: correspondence
+    paperless_type: Correspondence
+  - slug: check
+    paperless_type: Check
+  - slug: other
+    paperless_type: Other
 ```
 
-The LLM must pick exactly one category per document. Unknown values fall back to `other`.
+- The LLM must pick exactly one **slug** per document. Unknown values fall back to `other`.
+- With `PAPERLESS_BOOTSTRAP_TYPES=true` (default), the worker creates any missing document types in Paperless on the first metadata sync — no manual Paperless setup required.
+- If you rename a `paperless_type`, restart the stack; existing Paperless types are not renamed automatically.
 
 Restart the stack after changes: `make down && make up`.
 
@@ -206,6 +235,25 @@ Restart the stack after changes: `make down && make up`.
 - Pipeline API (`:8080`) is for **status and retry**, not search.
 
 Restrict Paperless to trusted operators (VPN, firewall, or reverse proxy with auth). v1 has no SSO.
+
+### Paperless metadata bootstrap (v1.1)
+
+**You do not need to pre-create tags, correspondents, or custom fields in Paperless.** The worker bootstraps metadata on the first `commit.archive` that syncs to Paperless:
+
+| What | When | How |
+|------|------|-----|
+| **Document types** | First sync (if `PAPERLESS_BOOTSTRAP_TYPES=true`) | One type per `paperless_type` in `config/categories.yaml` |
+| **Content Date** custom field | First sync | Date field named `PAPERLESS_CONTENT_DATE_FIELD_NAME` (default `Content Date`) |
+| **Tags** | Each document | Created on demand from enrichment (category + LLM tags + entities) |
+| **Correspondents** | Each document | Created on demand when originator confidence ≥ `METADATA_ORIGINATOR_MIN_CONF` |
+
+**Verify bootstrap worked:** process a test batch, then in Paperless check **Settings → Document types** (you should see Invoice, Bank Statement, etc.) and **Settings → Custom fields** (Content Date). Open an archived document — it should show a document type, tags, and optionally correspondent + Content Date.
+
+**One-way sync:** pipeline → Paperless only. Edits you make in the Paperless UI (tags, correspondent, type) are **not** written back to Postgres. To refresh metadata from the pipeline, re-run archive: `POST /batches/{id}/retry` with `force: false` (re-syncs without re-uploading the PDF).
+
+**Tag convention:** enrichment tags are lowercase. People and organizations mentioned in the document appear as `entity:{slug}` tags (e.g. `entity:chase-bank`, `entity:john-dinglebarre`). The category slug is always included as a tag. Max 20 tags per document; overflow sets `needs_review`.
+
+**Deeper design:** [`docs/plans/designs/001-rich-metadata-paperless.md`](plans/designs/001-rich-metadata-paperless.md). **Live eval PDFs:** [`docs/eval-corpus.md`](eval-corpus.md).
 
 ---
 
@@ -237,7 +285,7 @@ All checks should be `"ok"`. If `paperless` fails, wait for its startup period (
 curl -s http://localhost:8080/batches/<batch-uuid> | jq .
 ```
 
-Response includes `status`, `documents`, `jobs`, and errors.
+Response includes `status`, `documents`, `jobs`, and errors. Per document (v1.1): `document_date`, `originator`, `entities`, and `metadata_synced` (true when enrichment was fully pushed to Paperless).
 
 ### Retry a failed batch
 
@@ -252,7 +300,21 @@ curl -s -X POST http://localhost:8080/batches/<batch-uuid>/retry \
 
 ### `needs_review` documents
 
-Low split or enrich confidence sets `needs_review=true` on a document. v1 still archives to Paperless. There is **no review UI** yet — use Paperless tags/titles and plan manual spot-checks.
+`needs_review=true` flags documents that need a human spot-check. v1 still archives to Paperless. There is **no review UI** yet — filter in the API response or spot-check in Paperless.
+
+Common reasons:
+
+| Cause | What happened |
+|-------|----------------|
+| Low split confidence | Page boundaries uncertain (`SPLIT_MIN_CONFIDENCE`) |
+| Low enrich confidence | LLM unsure about category/title |
+| Tag overflow | More than 20 tags after normalization |
+| Low date/originator confidence | Value kept in Postgres but not synced to Paperless |
+| Future content date | Date rejected for Paperless Content Date field |
+| Metadata sync failure | `metadata_synced=false` — partial or failed Paperless PATCH |
+| LLM / OCR failure | Fallback title and `tags: ["other"]` |
+
+When `metadata_synced=false` but `paperless_id` is set, the PDF is archived but tags/type/correspondent/date may be incomplete. Retry the batch (`force: false`) to re-run `sync_metadata` without re-uploading.
 
 ---
 
@@ -325,6 +387,10 @@ Test restores on a non-production host quarterly. Document your exact volume nam
 | High Azure/OpenAI bill | Confirm guardrails; check for retry loops; set `OCR_PROVIDER=fake` only on dev |
 | Paperless empty but batch `completed` | Paperless health; token; `paperless` check in `/health` |
 | Wrong document boundaries | Add blank or barcode separator sheets; avoid over-stuffing one batch |
+| `metadata_synced=false` | `GET /batches/{id}` → check `needs_review`; retry batch (`force: false`); worker logs for `sync_metadata`; confirm document types exist (bootstrap) and Paperless API token is valid |
+| Tags missing in Paperless | Sync may have failed partially — retry; check `metadata_synced`; tag create races usually self-heal on retry |
+| No correspondent / Content Date | Originators/dates below `METADATA_*_MIN_CONF` are skipped by design; lower thresholds in `.env` if too strict |
+| Document type missing | Set `PAPERLESS_BOOTSTRAP_TYPES=true` and restart; or create types manually matching `paperless_type` names in `categories.yaml` |
 
 ### Useful log commands
 
@@ -344,7 +410,9 @@ docker compose logs -f paperless --tail=100
 - [ ] `.env` has production providers and object store
 - [ ] Scanner or sync job lands PDFs at `landing/.../original.pdf`
 - [ ] Separator sheets in use
-- [ ] `config/categories.yaml` reviewed
+- [ ] `config/categories.yaml` reviewed (`slug` + `paperless_type` pairs)
+- [ ] `METADATA_*_MIN_CONF` and `PAPERLESS_BOOTSTRAP_TYPES` set as intended
+- [ ] Test batch shows document types + tags in Paperless (`metadata_synced=true` in API)
 - [ ] Paperless password changed; access restricted
 - [ ] Backup job scheduled
 - [ ] Operator knows `GET /batches/{id}` and retry endpoint
@@ -361,5 +429,8 @@ docker compose logs -f paperless --tail=100
 | Batch status | `GET /batches/{uuid}` |
 | Retry | `POST /batches/{uuid}/retry` |
 | Live smoke test | `LIVE=1 make smoke` |
-| Categories | `config/categories.yaml` |
+| Categories / doc types | `config/categories.yaml` |
+| Metadata env vars | `METADATA_DATE_MIN_CONF`, `METADATA_ORIGINATOR_MIN_CONF`, `PAPERLESS_BOOTSTRAP_TYPES` |
+| Metadata design | `docs/plans/designs/001-rich-metadata-paperless.md` |
+| Live eval PDFs | `docs/eval-corpus.md` |
 | Landing path | `landing/{date}/{batch_id}/original.pdf` |

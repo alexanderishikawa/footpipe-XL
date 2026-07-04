@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from pipeline.providers.azure_ocr import iter_page_chunks, parse_analyze_result
-from pipeline.providers.openai_llm import parse_enrichment
+from pipeline.providers.openai_llm import _build_prompt, parse_enrichment
 
 
 def test_parse_analyze_result_maps_pages_and_confidence():
@@ -85,3 +85,69 @@ def test_parse_enrichment_unknown_category_becomes_other():
     )
     assert enr.category == "other"
     assert enr.confidence == 1.0
+
+
+def test_parse_enrichment_v11_fields_and_tag_normalization():
+    cats = ["invoice", "other"]
+    enr = parse_enrichment(
+        {
+            "title": "March Invoice",
+            "summary": "Services rendered",
+            "category": "invoice",
+            "tags": ["vendor:acme"],
+            "confidence": 0.88,
+            "document_date": "2024-03-15",
+            "document_date_confidence": 0.91,
+            "originator": "Acme Corp",
+            "originator_confidence": 0.85,
+            "entities": ["Jane Doe", "Foo LLC"],
+        },
+        cats,
+    )
+    assert enr.document_date == "2024-03-15"
+    assert enr.document_date_confidence == 0.91
+    assert enr.originator == "Acme Corp"
+    assert enr.originator_confidence == 0.85
+    assert enr.entities == ["Jane Doe", "Foo LLC"]
+    assert enr.tags[0] == "invoice"
+    assert "entity:jane-doe" in enr.tags
+    assert "entity:foo-llc" in enr.tags
+
+
+def test_parse_enrichment_safe_defaults_for_missing_v11_fields():
+    enr = parse_enrichment(
+        {"title": "T", "summary": "S", "category": "other", "tags": [], "confidence": 0.5},
+        ["other"],
+    )
+    assert enr.document_date is None
+    assert enr.document_date_confidence == 0.0
+    assert enr.originator is None
+    assert enr.originator_confidence == 0.0
+    assert enr.entities == []
+
+
+def test_parse_enrichment_rejects_invalid_document_date():
+    enr = parse_enrichment(
+        {
+            "title": "T",
+            "summary": "S",
+            "category": "other",
+            "tags": [],
+            "confidence": 0.5,
+            "document_date": "not-a-date",
+            "document_date_confidence": 0.9,
+        },
+        ["other"],
+    )
+    assert enr.document_date is None
+    assert enr.document_date_confidence == 0.0
+
+
+def test_build_prompt_includes_content_date_and_originator_guidance():
+    system, _ = _build_prompt("sample", ["invoice", "other"])
+    lowered = system.lower()
+    assert "document_date" in lowered
+    assert "scan" in lowered
+    assert "originator" in lowered
+    assert "recipient" in lowered
+    assert "entities" in lowered

@@ -61,10 +61,14 @@
         "summary": "string",
         "category": "invoice|contract|bank|tax|correspondence|check|other",
         "tags": ["string"],
+        "document_date": "2024-03-15",
+        "originator": "Chase Bank",
+        "entities": ["John Dinglebarre"],
         "split_confidence": 0.92,
         "enrich_confidence": 0.88,
         "needs_review": false,
-        "paperless_id": 123
+        "paperless_id": 123,
+        "metadata_synced": true
       }
     ],
     "jobs": [
@@ -174,10 +178,14 @@
 | summary | string | no | From enrich |
 | category | string | no | Taxonomy value |
 | tags | string[] | no | From enrich |
+| document_date | date (ISO `YYYY-MM-DD`) | no | Printed document date from enrich |
+| originator | string | no | Issuer/sender from enrich |
+| entities | string[] | no | People and organizations mentioned (from enrich) |
 | split_confidence | float | yes | 0–1 |
 | enrich_confidence | float | no | 0–1 |
 | needs_review | bool | yes | Default false |
 | paperless_id | int | no | External archive id |
+| metadata_synced | bool | yes | `true` when `metadata_json.sync.ok` is true after Paperless sync; `false` if partial, errors, or sync not yet run |
 | superseded_by | UUID | no | Re-split lineage |
 
 ### Artifact

@@ -8,18 +8,22 @@ queue serially, so handlers do not contend for the same batch.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
 from .categories import load_categories
-from .config import get_settings
+from .config import Settings, get_settings
 from .models import Artifact, Batch, Document, Page
 from .objectstore import S3ObjectStore, checksum_bytes
 from .pdfutil import extract_pages, page_count
+from .providers.base import Enrichment
 from .providers.registry import get_archive_provider, get_llm_provider, get_ocr_provider
 from .queue import JobMessage
 from .split_logic import split_pages
+
+log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 
@@ -187,8 +191,143 @@ def split_run(session, msg: JobMessage) -> list[JobMessage]:
     return next_msgs
 
 
+def _parse_content_date(iso_str: str | None) -> date | None:
+    if not iso_str:
+        return None
+    try:
+        return date.fromisoformat(iso_str)
+    except ValueError:
+        log.warning("invalid document_date ISO string: %r", iso_str)
+        return None
+
+
+def _is_future_content_date(value: date) -> bool:
+    return value > date.today()
+
+
+def _enrich_metadata_base(doc: Document) -> dict:
+    existing = doc.metadata_json if isinstance(doc.metadata_json, dict) else {}
+    return {"sync": existing.get("sync")}
+
+
+def _build_enrich_metadata(
+    enr: Enrichment,
+    *,
+    settings: Settings,
+    parsed_date: date | None,
+    future_date: bool,
+) -> dict:
+    date_sync_eligible = (
+        parsed_date is not None
+        and not future_date
+        and enr.document_date_confidence >= settings.metadata_date_min_conf
+    )
+    originator_sync_eligible = (
+        enr.originator is not None
+        and enr.originator_confidence >= settings.metadata_originator_min_conf
+    )
+    return {
+        "title": enr.title,
+        "category": enr.category,
+        "confidence": enr.confidence,
+        "document_date": enr.document_date,
+        "document_date_confidence": enr.document_date_confidence,
+        "document_date_sync_eligible": date_sync_eligible,
+        "document_date_rejected_future": future_date,
+        "originator": enr.originator,
+        "originator_confidence": enr.originator_confidence,
+        "originator_sync_eligible": originator_sync_eligible,
+        "entities": list(enr.entities),
+        "tag_overflow": enr.tags_overflow,
+    }
+
+
+def _enrichment_needs_review(
+    enr: Enrichment,
+    *,
+    settings: Settings,
+    future_date: bool,
+    empty_text: bool,
+) -> bool:
+    if empty_text:
+        return True
+    if enr.confidence < settings.split_min_confidence:
+        return True
+    if enr.tags_overflow:
+        return True
+    if future_date:
+        return True
+    if enr.document_date and enr.document_date_confidence < settings.metadata_date_min_conf:
+        return True
+    if enr.originator and enr.originator_confidence < settings.metadata_originator_min_conf:
+        return True
+    return False
+
+
+def _apply_enrichment_failure(doc: Document, *, doc_text: str, error: str = "llm_failure") -> None:
+    snippet = (doc_text.strip().splitlines() or ["Untitled document"])[0][:120]
+    doc.title = snippet or "Untitled document"
+    doc.summary = doc_text.strip()[:400]
+    doc.category = "other"
+    doc.tags = ["other"]
+    doc.enrich_confidence = 0.0
+    doc.document_date = None
+    doc.originator = None
+    doc.entities = []
+    base = _enrich_metadata_base(doc)
+    base["enrich"] = {"error": error}
+    doc.metadata_json = base
+    doc.needs_review = True
+
+
+def _apply_enrichment_to_document(
+    doc: Document,
+    enr: Enrichment,
+    *,
+    settings: Settings | None = None,
+    doc_text: str = "",
+) -> None:
+    settings = settings or get_settings()
+    doc.title = enr.title
+    doc.summary = enr.summary
+    doc.category = enr.category
+    doc.tags = list(enr.tags)
+    doc.enrich_confidence = enr.confidence
+    doc.entities = list(enr.entities)
+
+    parsed_date = _parse_content_date(enr.document_date)
+    future_date = parsed_date is not None and _is_future_content_date(parsed_date)
+    doc.document_date = parsed_date
+
+    if (
+        enr.originator
+        and enr.originator_confidence >= settings.metadata_originator_min_conf
+    ):
+        doc.originator = enr.originator[:256]
+    else:
+        doc.originator = None
+
+    base = _enrich_metadata_base(doc)
+    base["enrich"] = _build_enrich_metadata(
+        enr,
+        settings=settings,
+        parsed_date=parsed_date,
+        future_date=future_date,
+    )
+    doc.metadata_json = base
+
+    review = _enrichment_needs_review(
+        enr,
+        settings=settings,
+        future_date=future_date,
+        empty_text=not doc_text.strip(),
+    )
+    doc.needs_review = doc.needs_review or review
+
+
 # --- enrich.run ---------------------------------------------------------------
 def enrich_run(session, msg: JobMessage) -> list[JobMessage]:
+    settings = get_settings()
     doc = session.get(Document, _uuid(msg.entity_id))
     if doc is None:
         raise RuntimeError(f"document {msg.entity_id} not found")
@@ -210,27 +349,73 @@ def enrich_run(session, msg: JobMessage) -> list[JobMessage]:
     try:
         enr = get_llm_provider().enrich(doc_text, load_categories())
     except Exception:
-        # Fallback on LLM failure (hands-off): category 'other' + OCR snippet.
-        snippet = (doc_text.strip().splitlines() or ["Untitled document"])[0][:120]
-        enr = None
-        doc.title = snippet or "Untitled document"
-        doc.summary = doc_text.strip()[:400]
-        doc.category = "other"
-        doc.tags = ["other"]
-        doc.enrich_confidence = 0.0
-    if enr is not None:
-        doc.title = enr.title
-        doc.summary = enr.summary
-        doc.category = enr.category
-        doc.tags = list(enr.tags)
-        doc.enrich_confidence = enr.confidence
+        log.exception("enrich.run LLM failure for document %s", doc.id)
+        _apply_enrichment_failure(doc, doc_text=doc_text)
+    else:
+        _apply_enrichment_to_document(doc, enr, settings=settings, doc_text=doc_text)
 
     return [JobMessage(type="commit.archive", entity_id=str(doc.id), batch_id=str(doc.batch_id))]
 
 
+def _build_sync_input(doc: Document) -> dict:
+    """Build Paperless sync payload from Document columns + metadata_json.enrich flags."""
+    enrich: dict = {}
+    if isinstance(doc.metadata_json, dict):
+        raw = doc.metadata_json.get("enrich")
+        if isinstance(raw, dict):
+            enrich = raw
+
+    document_date = enrich.get("document_date")
+    if document_date is None and doc.document_date is not None:
+        document_date = doc.document_date.isoformat()
+
+    return {
+        "category": doc.category,
+        "tags": list(doc.tags or []),
+        "document_date": document_date,
+        "originator": doc.originator,
+        "document_date_sync_eligible": bool(enrich.get("document_date_sync_eligible")),
+        "originator_sync_eligible": bool(enrich.get("originator_sync_eligible")),
+        "document_date_rejected_future": bool(enrich.get("document_date_rejected_future")),
+    }
+
+
+def _sync_document_metadata(doc: Document) -> None:
+    """Push enrichment to Paperless and persist audit under metadata_json.sync."""
+    if doc.paperless_id is None:
+        return
+
+    archive = get_archive_provider()
+    sync_input = _build_sync_input(doc)
+    try:
+        sync_result = archive.sync_metadata(doc.paperless_id, sync_input)
+    except Exception:
+        log.exception(
+            "sync_metadata raised for document %s (paperless_id=%s)",
+            doc.id,
+            doc.paperless_id,
+        )
+        sync_result = {
+            "ok": False,
+            "partial": False,
+            "tag_ids": [],
+            "correspondent_id": None,
+            "document_type_id": None,
+            "content_date_field_id": None,
+            "content_date": None,
+            "errors": ["sync_metadata_exception"],
+        }
+
+    base = dict(doc.metadata_json) if isinstance(doc.metadata_json, dict) else {}
+    base["sync"] = sync_result
+    doc.metadata_json = base
+
+    if not sync_result.get("ok"):
+        doc.needs_review = True
+
+
 # --- commit.archive -----------------------------------------------------------
 def commit_archive(session, msg: JobMessage) -> list[JobMessage]:
-    store = S3ObjectStore()
     doc = session.get(Document, _uuid(msg.entity_id))
     if doc is None:
         raise RuntimeError(f"document {msg.entity_id} not found")
@@ -239,7 +424,11 @@ def commit_archive(session, msg: JobMessage) -> list[JobMessage]:
         batch.status = "commit"
 
     if doc.paperless_id is not None:
+        _sync_document_metadata(doc)
+        session.flush()
         return _maybe_finalize(session, batch)
+
+    store = S3ObjectStore()
 
     original_bytes = store.get(_original_key(session, store, batch))
     # Provenance keyed on batch id + page range (stable across re-splits) so a
@@ -278,6 +467,9 @@ def commit_archive(session, msg: JobMessage) -> list[JobMessage]:
     }
     paperless_id = get_archive_provider().upsert_document(title, final_pdf, metadata)
     doc.paperless_id = paperless_id
+    session.flush()
+
+    _sync_document_metadata(doc)
     session.flush()
 
     return _maybe_finalize(session, batch)

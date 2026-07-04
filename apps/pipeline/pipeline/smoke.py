@@ -25,6 +25,7 @@ from .db import session_scope
 from .models import Batch, Document
 from .objectstore import S3ObjectStore
 from .providers.paperless import PaperlessArchive
+from .schemas import metadata_synced_from_json
 
 FIXTURES_DIR = Path("/app/fixtures")
 TERMINAL = {"completed", "failed", "failed_partial", "skipped_duplicate"}
@@ -74,6 +75,28 @@ def check(name: str, cond: bool, detail: str) -> bool:
     return cond
 
 
+def doc_has_tags_any_of(actual_tags: list[str], allowed: list[str]) -> bool:
+    """True when at least one allowed tag is present (used by smoke + unit tests)."""
+    if not allowed:
+        return True
+    actual = set(actual_tags)
+    return any(tag in actual for tag in allowed)
+
+
+def resolve_tags_for_assertion(
+    paperless: PaperlessArchive,
+    paperless_id: int | None,
+    postgres_tags: list[str],
+) -> tuple[list[str], str]:
+    """Prefer live Paperless tags; fall back to Postgres Document.tags when unavailable."""
+    if paperless_id is not None:
+        try:
+            return paperless.get_document_tags(paperless_id), "paperless"
+        except Exception:  # noqa: BLE001
+            pass
+    return list(postgres_tags), "postgres"
+
+
 def run() -> int:
     run_id = uuid.uuid4().hex[:8]
     store = S3ObjectStore()
@@ -115,6 +138,8 @@ def run() -> int:
             categories = [d.category for d in docs]
             needs_review = [d.needs_review for d in docs]
             paperless_ids = [d.paperless_id for d in docs]
+            doc_tags = [list(d.tags or []) for d in docs]
+            doc_metadata = [d.metadata_json for d in docs]
             batch_id = str(batch.id)
 
         ok = True
@@ -153,6 +178,27 @@ def run() -> int:
             count == expected["documents"],
             f"documents titled with batch id in Paperless = {count}",
         )
+
+        tags_any_of = expected.get("tags_any_of")
+        if tags_any_of:
+            require_synced = expected.get("require_metadata_synced", True)
+            for i, pid in enumerate(paperless_ids):
+                resolved, source = resolve_tags_for_assertion(
+                    paperless, pid, doc_tags[i]
+                )
+                ok &= check(
+                    f"tags_any_of_doc_{i}",
+                    doc_has_tags_any_of(resolved, tags_any_of),
+                    f"{source} tags={resolved}, need any of {tags_any_of}",
+                )
+                if require_synced:
+                    synced = metadata_synced_from_json(doc_metadata[i])
+                    ok &= check(
+                        f"metadata_synced_doc_{i}",
+                        synced,
+                        f"metadata_json.sync.ok={synced}",
+                    )
+
         all_ok &= ok
 
     print("\n== SMOKE", "PASSED ==" if all_ok else "FAILED ==")

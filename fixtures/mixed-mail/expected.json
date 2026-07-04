@@ -5,5 +5,11 @@
     "contract",
     "correspondence"
   ],
+  "tags_any_of": [
+    "invoice",
+    "contract",
+    "correspondence",
+    "scanned"
+  ],
   "max_needs_review_ratio": 1.0
 }

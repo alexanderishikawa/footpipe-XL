@@ -24,7 +24,7 @@ FIXTURES: dict[str, tuple[list[list[str]], dict]] = {
             ["@@DOC category=invoice@@", "Globex Invoice #2002", "Bill To: Foo LLC", "Amount Due: $88.50"],
             ["@@DOC category=invoice@@", "Initech Invoice #3003", "Bill To: Foo LLC", "Amount Due: $1,299.00"],
         ],
-        {"documents": 3, "categories_any_of": ["invoice"], "max_needs_review_ratio": 1.0},
+        {"documents": 3, "categories_any_of": ["invoice"], "tags_any_of": ["invoice", "scanned"], "max_needs_review_ratio": 1.0},
     ),
     "mixed-mail": (
         [
@@ -36,6 +36,7 @@ FIXTURES: dict[str, tuple[list[list[str]], dict]] = {
         {
             "documents": 3,
             "categories_any_of": ["invoice", "contract", "correspondence"],
+            "tags_any_of": ["invoice", "contract", "correspondence", "scanned"],
             "max_needs_review_ratio": 1.0,
         },
     ),
@@ -45,7 +46,7 @@ FIXTURES: dict[str, tuple[list[list[str]], dict]] = {
             ["@@SEP@@", "*** SEPARATOR ***"],
             ["IRS Form 1099-MISC", "Tax year 2025 miscellaneous income statement"],
         ],
-        {"documents": 2, "categories_any_of": ["bank", "tax"], "max_needs_review_ratio": 1.0},
+        {"documents": 2, "categories_any_of": ["bank", "tax"], "tags_any_of": ["bank", "tax", "scanned"], "max_needs_review_ratio": 1.0},
     ),
 }
 

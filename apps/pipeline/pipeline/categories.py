@@ -2,24 +2,12 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
+from .config import _DEFAULT_CATEGORY_ENTRIES, load_category_slugs, paperless_type_for_slug
 
-import yaml
+_DEFAULT = [e.slug for e in _DEFAULT_CATEGORY_ENTRIES]
 
-from .config import get_settings
-
-_DEFAULT = ["invoice", "contract", "bank", "tax", "correspondence", "check", "other"]
+__all__ = ["_DEFAULT", "load_categories", "paperless_type_for_slug"]
 
 
-@lru_cache
 def load_categories() -> list[str]:
-    path = get_settings().categories_path
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-    except FileNotFoundError:
-        return list(_DEFAULT)
-    cats = data.get("categories") or _DEFAULT
-    if "other" not in cats:
-        cats = [*cats, "other"]
-    return list(cats)
+    return load_category_slugs()

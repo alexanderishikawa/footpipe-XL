@@ -4,5 +4,10 @@
     "bank",
     "tax"
   ],
+  "tags_any_of": [
+    "bank",
+    "tax",
+    "scanned"
+  ],
   "max_needs_review_ratio": 1.0
 }

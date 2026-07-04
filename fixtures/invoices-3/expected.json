@@ -3,5 +3,9 @@
   "categories_any_of": [
     "invoice"
   ],
+  "tags_any_of": [
+    "invoice",
+    "scanned"
+  ],
   "max_needs_review_ratio": 1.0
 }

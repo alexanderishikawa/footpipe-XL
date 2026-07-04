@@ -72,6 +72,7 @@ def test_azure_ocr_provider_calls_sdk(mock_settings, mock_client_cls):
 def test_openai_llm_provider_calls_sdk(mock_settings, mock_openai_cls):
     mock_settings.return_value.openai_api_key = "sk-test"
     mock_settings.return_value.openai_model = "gpt-4o-mini"
+    mock_settings.return_value.max_enrichment_tags = 20
     choice = MagicMock()
     choice.message.content = (
         '{"title":"Bill","summary":"Due soon","category":"invoice","tags":["invoice"],"confidence":0.8}'

@@ -1,10 +1,18 @@
 # Document category taxonomy (docs/design.md § Category taxonomy).
-# Enrichment maps each document to exactly one of these values; unknown -> other.
+# Enrichment maps each document to exactly one slug; unknown -> other.
+# paperless_type is the Paperless-ngx document type display name (v1.1 metadata).
 categories:
-  - invoice
-  - contract
-  - bank
-  - tax
-  - correspondence
-  - check
-  - other
+  - slug: invoice
+    paperless_type: Invoice
+  - slug: contract
+    paperless_type: Contract
+  - slug: bank
+    paperless_type: Bank Statement
+  - slug: tax
+    paperless_type: Tax Document
+  - slug: correspondence
+    paperless_type: Correspondence
+  - slug: check
+    paperless_type: Check
+  - slug: other
+    paperless_type: Other

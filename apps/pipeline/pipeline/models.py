@@ -6,10 +6,11 @@ Mirrors the domain model in `docs/design.md` and `docs/api-contract.md`.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     ARRAY,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -18,7 +19,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -108,6 +109,10 @@ class Document(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    originator: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    entities: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     split_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     enrich_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     needs_review: Mapped[bool] = mapped_column(nullable=False, default=False)
