@@ -38,3 +38,14 @@ docs/
 ## Human operator
 
 Cloud-agent launch, secrets, and acceptance are documented in `docs/operator-guide.md`. Do not rewrite that guide unless the plan’s M9 requires `docs/ops-setup.md` (scanner/production ops).
+
+## Cursor Cloud specific instructions
+
+Durable, non-obvious notes for future cloud agents. The VM snapshot already has Docker + Compose and `uv` installed; the startup update script only refreshes Python deps once a manifest exists.
+
+- **Repo is seed-only.** Today the repo contains only docs + `.env.example`/`.gitignore` — there is no `apps/`, `docker-compose.yml`, `Makefile`, Python project, tests, or fixtures yet. The app is built milestone-by-milestone per `docs/plan.md`; `make up|test|smoke` do not exist until the harness (M1) is built.
+- **Docker daemon is NOT auto-started on VM boot.** Run `sudo service docker start` once at the start of a session before any Docker/Compose work (idempotent). The daemon is configured for this VM with `storage-driver: fuse-overlayfs` and legacy iptables (`/etc/docker/daemon.json`); do not switch it back to `overlay2`.
+- **`docker` needs `sudo`** unless your shell has picked up `docker` group membership (added during setup, effective only in a fresh login shell). Using `sudo docker ...` always works.
+- **Python toolchain is `uv`** (installed at `~/.local/bin`, on PATH via `~/.profile`/`~/.bashrc`). Prefer `uv sync` / `uv run`. System Python is 3.12.
+- **Providers default to `fake`** (`OCR_PROVIDER=fake`, `LLM_PROVIDER=fake`) until milestone M8; no cloud keys are needed for M1–M7. Copy `.env.example` → `.env` for local runs (never commit `.env`).
+- **Backing services** (per `docs/design.md`): Postgres, Redis, MinIO (S3-compatible object store), and Paperless-ngx. Compose is the intended way to run them once M1 adds `docker-compose.yml`.
