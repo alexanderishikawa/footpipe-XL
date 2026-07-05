@@ -56,6 +56,7 @@ class PaperlessArchive:
             json={"username": self._admin_user, "password": self._admin_pass},
             timeout=15.0,
             retries=0,
+            headers={},  # no auth on the token endpoint; avoids _headers()->_get_token recursion
         )
         if resp.status_code != 200:
             raise PaperlessError(f"token request failed: {resp.status_code} {resp.text}")
@@ -67,7 +68,9 @@ class PaperlessArchive:
 
     # --- HTTP with retry ------------------------------------------------------
     def _request(self, method: str, url: str, *, retries: int = _MAX_RETRIES, **kwargs) -> httpx.Response:
-        headers = kwargs.pop("headers", None) or self._headers()
+        headers = kwargs.pop("headers", None)
+        if headers is None:  # explicit {} means "no auth header" (token endpoint)
+            headers = self._headers()
         last_resp: httpx.Response | None = None
         attempts = retries + 1
         for attempt in range(attempts):

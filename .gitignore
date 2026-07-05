@@ -56,3 +56,7 @@ htmlcov/
 
 # oma docs generated artifacts
 docs/generated/
+
+# Local eval scratch — extracted OCR text / labels derived from real (PII) scans.
+# NEVER commit: contains real names and account numbers.
+scratch/

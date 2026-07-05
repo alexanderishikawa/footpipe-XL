@@ -49,6 +49,8 @@ class Settings(BaseSettings):
 
     # Guardrails
     split_min_confidence: float = 0.6
+    # Content-aware split: minimum weighted start-score to open a new document.
+    split_start_threshold: float = 0.6
     max_pages_per_batch: int = 200
     max_pages_per_day: int = 500
 

@@ -83,6 +83,11 @@ def _build_prompt(doc_text: str, categories: list[str]) -> tuple[str, str]:
         "letter date), not the scan or upload date. "
         "originator is the issuer or sender (bank name, IRS, vendor), not the recipient. "
         "entities are people and organizations mentioned (account holders, payees). "
+        "The text is ONE document extracted from a larger scan batch (it may be a "
+        "bank or credit-card statement, a tax form, a check, a letter, or an "
+        "invoice); describe only this document. For statements, prefer the "
+        "statement period end or closing date as document_date and the financial "
+        "institution as originator. "
         "If uncertain, use null and low confidence; never invent account numbers. "
         "If unsure of category, use 'other' and lower confidence."
     )
