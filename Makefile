@@ -25,6 +25,10 @@ live-up: env-sync
 	$(COMPOSE) up -d --force-recreate api worker
 	$(COMPOSE) up -d --wait --wait-timeout 120 api worker
 
+## Re-run enrich (and optionally re-OCR empty failed batches) after LLM/API outages.
+retry-snubbed:
+	$(COMPOSE) run --rm -v $(CURDIR)/scripts:/app/scripts:ro api python /app/scripts/retry_snubbed.py --ocr-empty
+
 ## Build + start the full stack and block until every service is healthy.
 up: env-sync
 	$(COMPOSE) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
