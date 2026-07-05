@@ -25,17 +25,20 @@ make env-check    # shows set/missing — never prints values
 
 `make up` and `make smoke` run `env-sync` automatically.
 
-## Alternative: `.env.local` on the VM
+## Alternative: `.env.local` on the VM (fastest if Secrets feel broken)
 
-If you prefer a file on the machine (e.g. saved in an environment snapshot):
+If Cursor Cloud Secrets still inject `OCR_PROVIDER=fake`, use `.env.local` — it **wins** over injected fakes:
 
 ```bash
 cp .env.local.example .env.local
-# edit .env.local — never commit it
+# edit .env.local — paste endpoint, Azure key, OpenAI key (never commit)
 make env-sync
+make env-check-live   # must say "Live providers ready"
+make live-up DOCKER="sudo docker"
+./scripts/live-upload.sh /path/to/your/bundle.pdf my-batch-name
 ```
 
-`.env.local` is gitignored. Cursor **Secrets** remain the safer default.
+`.env.local` is gitignored.
 
 ## How it works
 

@@ -16,6 +16,15 @@ env-sync:
 env-check:
 	@./scripts/sync-env.sh --check
 
+## Fail unless azure + openai keys and providers are configured.
+env-check-live:
+	@./scripts/sync-env.sh --check-live
+
+## Recreate api/worker so Compose picks up live provider .env.
+live-up: env-sync
+	$(COMPOSE) up -d --force-recreate api worker
+	$(COMPOSE) up -d --wait --wait-timeout 120 api worker
+
 ## Build + start the full stack and block until every service is healthy.
 up: env-sync
 	$(COMPOSE) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)

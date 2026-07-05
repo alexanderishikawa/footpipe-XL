@@ -78,6 +78,7 @@ def format_env_file(existing_text: str, values: dict[str, str]) -> str:
 
 
 def collect_values() -> dict[str, str]:
+    """Merge env sources. Highest priority last: .env → Cursor secrets → .env.local."""
     merged: dict[str, str] = {}
 
     if ENV_FILE.exists():
@@ -85,15 +86,28 @@ def collect_values() -> dict[str, str]:
     elif ENV_EXAMPLE.exists():
         merged.update(parse_env_lines(ENV_EXAMPLE.read_text(encoding="utf-8")))
 
-    if ENV_LOCAL.exists():
-        merged.update(parse_env_lines(ENV_LOCAL.read_text(encoding="utf-8")))
-
     for key in SYNC_KEYS:
         env_val = os.environ.get(key)
         if env_val is not None and env_val != "":
             merged[key] = env_val
 
+    # .env.local wins over Cursor-injected fakes (e.g. OCR_PROVIDER=fake in Cloud Secrets).
+    if ENV_LOCAL.exists():
+        merged.update(parse_env_lines(ENV_LOCAL.read_text(encoding="utf-8")))
+
     return {k: merged[k] for k in SYNC_KEYS if k in merged}
+
+
+def live_ready(values: dict[str, str]) -> tuple[bool, list[str]]:
+    issues: list[str] = []
+    if values.get("OCR_PROVIDER") != "azure":
+        issues.append("OCR_PROVIDER must be azure (got {!r})".format(values.get("OCR_PROVIDER", "")))
+    if values.get("LLM_PROVIDER") != "openai":
+        issues.append("LLM_PROVIDER must be openai (got {!r})".format(values.get("LLM_PROVIDER", "")))
+    for key in live_provider_keys():
+        if not values.get(key):
+            issues.append(f"{key} is missing")
+    return (len(issues) == 0, issues)
 
 
 def live_provider_keys() -> tuple[str, ...]:
@@ -123,20 +137,33 @@ def main() -> int:
         action="store_true",
         help="Print set/missing status only; do not write .env",
     )
+    parser.add_argument(
+        "--check-live",
+        action="store_true",
+        help="Exit 1 unless azure + openai providers and all API keys are set",
+    )
     args = parser.parse_args()
 
     values = collect_values()
 
-    if args.check:
+    if args.check or args.check_live:
         for line in status_report(values):
             print(line)
-        missing = [k for k in live_provider_keys() if not values.get(k)]
-        if values.get("OCR_PROVIDER") == "azure" and missing:
-            print(
-                "hint: add missing names to Cursor Cloud Agents → Secrets "
-                "(exact variable names), then re-run make env-sync"
-            )
-            return 1
+        if args.check_live:
+            ok, issues = live_ready(values)
+            if not ok:
+                print("")
+                print("Live providers NOT ready:")
+                for issue in issues:
+                    print(f"  - {issue}")
+                print("")
+                print("Fastest fix on this VM:")
+                print("  cp .env.local.example .env.local")
+                print("  # edit .env.local — paste Azure endpoint, Azure key, OpenAI key")
+                print("  make env-sync && make live-up")
+                return 1
+            print("")
+            print("Live providers ready.")
         return 0
 
     if not ENV_FILE.exists():
