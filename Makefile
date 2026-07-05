@@ -6,10 +6,18 @@ DOCKER ?= docker
 COMPOSE ?= $(DOCKER) compose
 WAIT_TIMEOUT ?= 600
 
-.PHONY: up down logs ps test smoke fixtures clean
+.PHONY: up down logs ps test smoke fixtures clean env-sync env-check
+
+## Merge Cursor Cloud Secrets / .env.local into .env (never prints values).
+env-sync:
+	@./scripts/sync-env.sh
+
+## Show which live provider keys are set (no values printed).
+env-check:
+	@./scripts/sync-env.sh --check
 
 ## Build + start the full stack and block until every service is healthy.
-up:
+up: env-sync
 	$(COMPOSE) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
 	$(COMPOSE) ps
 
@@ -30,7 +38,7 @@ test:
 
 ## End-to-end golden smoke over fixtures (requires the stack up).
 ## Default uses fake providers. Set LIVE=1 to run with azure + openai (secrets in .env).
-smoke:
+smoke: env-sync
 	$(COMPOSE) up -d --build --wait --wait-timeout $(WAIT_TIMEOUT)
 ifeq ($(LIVE),1)
 	$(COMPOSE) exec -T -e OCR_PROVIDER=azure -e LLM_PROVIDER=openai api python -m pipeline.smoke

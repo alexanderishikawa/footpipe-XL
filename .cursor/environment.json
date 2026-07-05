@@ -1,0 +1,4 @@
+{
+  "install": "sudo service docker start 2>/dev/null || true; chmod +x scripts/sync-env.sh && ./scripts/sync-env.sh",
+  "start": "sudo service docker start 2>/dev/null || true"
+}

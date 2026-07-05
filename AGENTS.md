@@ -43,6 +43,10 @@ Cloud-agent launch, secrets, and acceptance are documented in `docs/operator-gui
 
 Durable, non-obvious notes for future cloud agents. The VM snapshot already has Docker + Compose and `uv` installed; the startup update script only refreshes Python deps once a manifest exists.
 
+### Live provider secrets (lock once)
+
+Add these to **Cursor Cloud Agents → Secrets** (exact names): `OCR_PROVIDER=azure`, `LLM_PROVIDER=openai`, `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`, `AZURE_DOCUMENT_INTELLIGENCE_KEY`, `OPENAI_API_KEY`. After changing secrets, **Update Existing Env** in the dashboard so injection picks them up. Then run `make env-sync` (also runs automatically before `make up` / `make smoke`). See [`docs/cloud-secrets.md`](docs/cloud-secrets.md).
+
 - **Docker daemon is NOT auto-started on VM boot.** Run `sudo service docker start` once at the start of a session before any Docker/Compose work (idempotent). The daemon is configured for this VM with `storage-driver: fuse-overlayfs` and legacy iptables (`/etc/docker/daemon.json`); do not switch it back to `overlay2`.
 - **`docker` needs `sudo`** unless your shell has picked up `docker` group membership (added during setup, effective only in a fresh login shell). Because of this, pass the override when using the Makefile: `make up DOCKER="sudo docker"` (same for `test`/`smoke`). Plain `make up` works only in a fresh login shell.
 - **Entrypoints are `make up|test|smoke`** (see `Makefile`). `make up` builds images and blocks on `--wait` until every service is healthy; the `api` container only reports healthy once `/health` returns 200 with `paperless: ok`, and Paperless takes ~30–120s to boot on first start, so `up` can take a few minutes. `make test` runs the fake-provider unit tests with `--no-deps` (no network). `make smoke` runs the golden end-to-end over `fixtures/`.

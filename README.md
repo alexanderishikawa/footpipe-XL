@@ -21,7 +21,7 @@ MVP (M1–M7) and live providers (M8) are implemented. Default providers are `fa
 make up && make test && make smoke
 ```
 
-**Live providers:** set Azure + OpenAI secrets in `.env`, then:
+**Live providers:** add secrets in Cursor Cloud Agents (or `.env.local`), then `make env-sync` — see [`docs/cloud-secrets.md`](docs/cloud-secrets.md). Then:
 
 ```bash
 LIVE=1 make smoke
